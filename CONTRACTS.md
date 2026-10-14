@@ -53,8 +53,8 @@ Source of truth. If you change anything here, announce it in the group and every
 | React (Vite) | 5173 |
 
 ## 7. Versions
-- Java 21, Spring Boot 3.x, Maven
-- Temporal Java SDK: [version, pinned in pom.xml]
+- Java 21, Spring Boot 4.1.1, Maven
+- Temporal Java SDK: [Temporal Java SDK to 1.39.0]
 - Node [version], CesiumJS for the globe
 - Docker: shared `infra/docker-compose.yml`
 
