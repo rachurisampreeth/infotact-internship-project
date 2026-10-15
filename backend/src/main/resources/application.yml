@@ -1,0 +1,11 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: aerosagex-backend
+
+temporal:
+  target: ${TEMPORAL_TARGET:127.0.0.1:7233}
+  namespace: ${TEMPORAL_NAMESPACE:default}
+  task-queue: ${TEMPORAL_TASK_QUEUE:DRONE_MISSION_QUEUE}
