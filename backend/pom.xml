@@ -25,6 +25,21 @@
 
     <dependencies>
 
+        <!-- Temporal Testing -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-testing</artifactId>
+            <version>${temporal.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Temporal Java SDK -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-sdk</artifactId>
+            <version>${temporal.version}</version>
+        </dependency>
+
         <!-- Spring Web MVC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -35,13 +50,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
-        </dependency>
-
-        <!-- Temporal Java SDK -->
-        <dependency>
-            <groupId>io.temporal</groupId>
-            <artifactId>temporal-sdk</artifactId>
-            <version>${temporal.version}</version>
         </dependency>
 
         <!-- Spring Boot Web MVC Tests -->
