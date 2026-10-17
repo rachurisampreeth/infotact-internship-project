@@ -1,4 +1,5 @@
-package com.aerosaga.backend.workflow;
+
+        package com.aerosaga.backend.workflow;
 
 import io.temporal.activity.ActivityOptions;
 import io.temporal.workflow.Workflow;
@@ -19,6 +20,20 @@ public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
                     .build()
     );
 
+    private final DroneActivities navigationActivities =
+            Workflow.newActivityStub(
+                    DroneActivities.class,
+                    ActivityOptions.newBuilder()
+                            .setStartToCloseTimeout(Duration.ofMinutes(10))
+                            .setHeartbeatTimeout(Duration.ofSeconds(15))
+                            .setRetryOptions(
+                                    io.temporal.common.RetryOptions.newBuilder()
+                                            .setMaximumAttempts(1)
+                                            .build()
+                            )
+                            .build()
+            );
+
     private String droneId;
     private String currentStep = "TAKEOFF";
     private String status = "PENDING";
@@ -33,7 +48,11 @@ public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
             activities.takeoff(droneId);
 
             currentStep = "NAVIGATE";
-            activities.navigate(droneId, request.destLat, request.destLon);
+            navigationActivities.navigate(
+                    droneId,
+                    request.destLat,
+                    request.destLon
+            );
 
             currentStep = "DROP";
             activities.dropPackage(droneId);
@@ -57,6 +76,4 @@ public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
                 + ", step=" + currentStep
                 + ", status=" + status;
     }
-
-
 }

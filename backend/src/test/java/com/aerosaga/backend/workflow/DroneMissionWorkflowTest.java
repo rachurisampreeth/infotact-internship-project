@@ -1,4 +1,5 @@
-package com.aerosaga.backend.workflow;
+
+        package com.aerosaga.backend.workflow;
 
 import com.aerosaga.backend.TemporalWorkerConfig;
 import io.temporal.client.WorkflowClient;
@@ -8,6 +9,8 @@ import io.temporal.worker.Worker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,7 +42,10 @@ class DroneMissionWorkflowTest {
         );
 
         worker.registerActivitiesImplementations(
-                new DroneActivitiesImpl()
+                new DroneActivitiesImpl(
+                        Duration.ofSeconds(2),
+                        Duration.ofMillis(250)
+                )
         );
 
         testEnvironment.start();
@@ -131,5 +137,4 @@ class DroneMissionWorkflowTest {
                 workflow.getState()
         );
     }
-
 }
