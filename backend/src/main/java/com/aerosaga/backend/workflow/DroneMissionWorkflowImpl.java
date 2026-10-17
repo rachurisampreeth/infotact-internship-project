@@ -7,14 +7,17 @@ import java.time.Duration;
 
 public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
 
-
-    private final DroneActivities activities =
-            Workflow.newActivityStub(
-                    DroneActivities.class,
-                    ActivityOptions.newBuilder()
-                            .setStartToCloseTimeout(Duration.ofSeconds(30))
-                            .build()
-            );
+    private final DroneActivities activities = Workflow.newActivityStub(
+            DroneActivities.class,
+            ActivityOptions.newBuilder()
+                    .setStartToCloseTimeout(Duration.ofSeconds(30))
+                    .setRetryOptions(
+                            io.temporal.common.RetryOptions.newBuilder()
+                                    .setMaximumAttempts(1)
+                                    .build()
+                    )
+                    .build()
+    );
 
     private String droneId;
     private String currentStep = "TAKEOFF";
