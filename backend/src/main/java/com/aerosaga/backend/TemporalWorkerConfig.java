@@ -10,7 +10,7 @@ import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
+import com.aerosaga.backend.workflow.FleetMissionWorkflowImpl;
 @Configuration
 @ConditionalOnProperty(
         name = "temporal.worker.enabled",
@@ -42,7 +42,9 @@ public class TemporalWorkerConfig {
 
         Worker worker = factory.newWorker(TASK_QUEUE);
         worker.registerWorkflowImplementationTypes(
-                DroneMissionWorkflowImpl.class);
+                DroneMissionWorkflowImpl.class,
+                FleetMissionWorkflowImpl.class
+        );
         worker.registerActivitiesImplementations(
                 new DroneActivitiesImpl());
 
