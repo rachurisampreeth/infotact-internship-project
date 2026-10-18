@@ -2,6 +2,7 @@ package com.aerosaga.backend.workflow;
 
 import com.aerosaga.backend.TemporalWorkerConfig;
 import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowFailedException;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
@@ -16,9 +17,11 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FleetMissionWorkflowTest {
+
 
     private TestWorkflowEnvironment testEnvironment;
     private WorkflowClient workflowClient;
@@ -142,6 +145,8 @@ class FleetMissionWorkflowTest {
         WorkflowClient.start(workflow::runFleet, requests);
 
         Set<String> completedDrones = new HashSet<>();
+        Set<String> navigatingDrones = new HashSet<>();
+
         long deadline = System.nanoTime()
                 + TimeUnit.SECONDS.toNanos(20);
 
@@ -152,6 +157,11 @@ class FleetMissionWorkflowTest {
                     workflow.getFleetState();
 
             for (DroneMissionState state : states) {
+                if ("NAVIGATE".equals(state.currentStep)
+                        && "ACTIVE".equals(state.status)) {
+                    navigatingDrones.add(state.droneId);
+                }
+
                 if ("COMPLETED".equals(state.status)) {
                     assertEquals("RETURN", state.currentStep);
                     completedDrones.add(state.droneId);
@@ -168,5 +178,160 @@ class FleetMissionWorkflowTest {
                 completedDrones,
                 "The fleet query should report all three completed drones"
         );
+
+        assertEquals(
+                Set.of("drone-101", "drone-102", "drone-103"),
+                navigatingDrones,
+                "The fleet query should report every drone navigating"
+        );
     }
+
+    @Test
+    void fleetShouldExecuteDroneMissionsConcurrently() {
+        Worker worker = testEnvironment.newWorker(
+                TemporalWorkerConfig.TASK_QUEUE
+        );
+
+        worker.registerWorkflowImplementationTypes(
+                FleetMissionWorkflowImpl.class,
+                DroneMissionWorkflowImpl.class
+        );
+
+        worker.registerActivitiesImplementations(
+                new DroneActivitiesImpl(
+                        Duration.ofSeconds(2),
+                        Duration.ofMillis(250)
+                )
+        );
+
+        testEnvironment.start();
+
+        FleetMissionWorkflow workflow =
+                workflowClient.newWorkflowStub(
+                        FleetMissionWorkflow.class,
+                        WorkflowOptions.newBuilder()
+                                .setTaskQueue(
+                                        TemporalWorkerConfig.TASK_QUEUE
+                                )
+                                .setWorkflowId(
+                                        "fleet-concurrency-test-001"
+                                )
+                                .build()
+                );
+
+        List<MissionRequest> requests = List.of(
+                new MissionRequest(
+                        "drone-concurrent-1", 17.3850, 78.4867
+                ),
+                new MissionRequest(
+                        "drone-concurrent-2", 17.4399, 78.4983
+                ),
+                new MissionRequest(
+                        "drone-concurrent-3", 17.4401, 78.3489
+                )
+        );
+
+        long startTime = System.nanoTime();
+
+        List<String> results = workflow.runFleet(requests);
+
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - startTime
+        );
+
+        assertEquals(3, results.size());
+
+        assertTrue(
+                results.stream().allMatch(
+                        result -> result.contains(
+                                "Mission completed successfully"
+                        )
+                ),
+                "Every drone mission should complete successfully"
+        );
+
+        assertTrue(
+                elapsedMillis < 12_000,
+                "Expected concurrent execution to finish within "
+                        + "12 seconds, but took "
+                        + elapsedMillis + " ms"
+        );
+    }
+
+    @Test
+    void fleetWorkflowShouldFailWhenDroneMissionFails() {
+        Worker worker = testEnvironment.newWorker(
+                TemporalWorkerConfig.TASK_QUEUE
+        );
+
+        worker.registerWorkflowImplementationTypes(
+                FleetMissionWorkflowImpl.class,
+                DroneMissionWorkflowImpl.class
+        );
+
+        worker.registerActivitiesImplementations(new DroneActivities() {
+
+            @Override
+            public String takeoff(String droneId) {
+                if ("drone-fail".equals(droneId)) {
+                    throw new IllegalStateException(
+                            "Simulated takeoff failure"
+                    );
+                }
+
+                return droneId + " took off successfully";
+            }
+
+            @Override
+            public String navigate(
+                    String droneId,
+                    double destLat,
+                    double destLon
+            ) {
+                return droneId + " navigated successfully";
+            }
+
+            @Override
+            public String dropPackage(String droneId) {
+                return droneId + " delivered the package successfully";
+            }
+
+            @Override
+            public String returnToBase(String droneId) {
+                return droneId + " returned to base successfully";
+            }
+        });
+
+        testEnvironment.start();
+
+        FleetMissionWorkflow workflow =
+                workflowClient.newWorkflowStub(
+                        FleetMissionWorkflow.class,
+                        WorkflowOptions.newBuilder()
+                                .setTaskQueue(
+                                        TemporalWorkerConfig.TASK_QUEUE
+                                )
+                                .setWorkflowId("fleet-failure-test-001")
+                                .build()
+                );
+
+        List<MissionRequest> requests = List.of(
+                new MissionRequest(
+                        "drone-success-1", 17.3850, 78.4867
+                ),
+                new MissionRequest(
+                        "drone-fail", 17.4399, 78.4983
+                ),
+                new MissionRequest(
+                        "drone-success-2", 17.4401, 78.3489
+                )
+        );
+
+        assertThrows(
+                WorkflowFailedException.class,
+                () -> workflow.runFleet(requests),
+                "The fleet workflow should fail when a child mission fails"
+        );
+    }
+
 }
