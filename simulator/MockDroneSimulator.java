@@ -21,11 +21,39 @@ public class MockDroneSimulator {
         boolean send = false;
 
         for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--drones") || args[i].equals("--duration")
+            || args[i].equals("--interval")) {
+        if (i + 1 >= args.length) {
+            System.err.println("Missing value after " + args[i]);
+            return;
+        }
+    }
             switch (args[i]) {
-                case "--drones" -> drones = Integer.parseInt(args[++i]);
-                case "--duration" -> duration = Integer.parseInt(args[++i]);
-                case "--interval" -> interval = Double.parseDouble(args[++i]);
-                case "--send" -> send = true;
+                case "--drones" -> {
+    try {
+        drones = Integer.parseInt(args[++i]);
+    } catch (NumberFormatException e) {
+        System.err.println("Invalid number for --drones. Use an integer from 1 to 50.");
+        return;
+    }
+}
+                case "--duration" -> {
+    try {
+        duration = Integer.parseInt(args[++i]);
+    } catch (NumberFormatException e) {
+        System.err.println("Invalid number for --duration. Use an integer of at least 1.");
+        return;
+    }
+}
+case "--interval" -> {
+    try {
+        interval = Double.parseDouble(args[++i]);
+    } catch (NumberFormatException e) {
+        System.err.println("Invalid number for --interval. Use a positive number.");
+        return;
+    }
+}
+case "--send" -> send = true;
                 case "--help" -> {
                     System.out.println(
                         "Usage: java simulator/MockDroneSimulator.java "
