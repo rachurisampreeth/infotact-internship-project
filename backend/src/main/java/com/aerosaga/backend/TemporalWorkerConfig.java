@@ -1,13 +1,16 @@
 
 package com.aerosaga.backend;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
+import com.aerosaga.backend.config.TemporalConfig;
 import com.aerosaga.backend.workflow.DroneActivitiesImpl;
 import com.aerosaga.backend.workflow.DroneMissionWorkflowImpl;
 import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowClientOptions;
 import io.temporal.serviceclient.WorkflowServiceStubs;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,28 +22,37 @@ import org.springframework.context.annotation.Configuration;
 )
 public class TemporalWorkerConfig {
 
-    public static final String TASK_QUEUE = "DRONE_MISSION_QUEUE";
-
     @Bean
-    public WorkflowServiceStubs workflowServiceStubs() {
+    public WorkflowServiceStubs workflowServiceStubs(
+            TemporalConfig temporalConfig) {
+
         return WorkflowServiceStubs.newServiceStubs(
                 WorkflowServiceStubsOptions.newBuilder()
-                        .setTarget("localhost:7233")
+                        .setTarget(temporalConfig.getTarget())
                         .build()
         );
     }
 
     @Bean
     public WorkflowClient workflowClient(
-            WorkflowServiceStubs serviceStubs) {
-        return WorkflowClient.newInstance(serviceStubs);
+            WorkflowServiceStubs serviceStubs,
+            TemporalConfig temporalConfig) {
+
+        WorkflowClientOptions options = WorkflowClientOptions.newBuilder()
+                .setNamespace(temporalConfig.getNamespace())
+                .build();
+
+        return WorkflowClient.newInstance(serviceStubs, options);
     }
 
     @Bean(destroyMethod = "shutdown")
-    public WorkerFactory workerFactory(WorkflowClient workflowClient) {
+    public WorkerFactory workerFactory(
+            WorkflowClient workflowClient,
+            TemporalConfig temporalConfig) {
+
         WorkerFactory factory = WorkerFactory.newInstance(workflowClient);
 
-        Worker worker = factory.newWorker(TASK_QUEUE);
+        Worker worker = factory.newWorker(temporalConfig.getTaskQueue());
         worker.registerWorkflowImplementationTypes(
                 DroneMissionWorkflowImpl.class);
         worker.registerActivitiesImplementations(
