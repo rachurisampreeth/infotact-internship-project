@@ -54,5 +54,29 @@ public class SimulatorChecks {
 
         System.out.println("PASS: simulator produced telemetry for both drones.");
         System.out.println("PASS: telemetry includes required field names.");
+        Process invalidProcess = new ProcessBuilder(
+        "java",
+        "simulator/MockDroneSimulator.java",
+        "--drones", "51",
+        "--duration", "1"
+).redirectErrorStream(true).start();
+
+String invalidOutput;
+try (BufferedReader reader = new BufferedReader(
+        new InputStreamReader(invalidProcess.getInputStream()))) {
+    invalidOutput = reader.lines()
+            .reduce("", (a, b) -> a + b + "\n");
+}
+
+int invalidExitCode = invalidProcess.waitFor();
+
+if (invalidExitCode != 0 ||
+        !invalidOutput.contains("Use 1-50 drones")) {
+    throw new AssertionError(
+            "Simulator did not handle invalid drone count correctly: "
+                    + invalidOutput);
+}
+
+System.out.println("PASS: simulator rejects more than 50 drones.");
     }
 }
