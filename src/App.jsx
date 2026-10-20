@@ -8,9 +8,9 @@ if (typeof window !== 'undefined') {
   window.CESIUM_BASE_URL = '/cesium'
 }
 
-// 5 Static mock drones conforming to CONTRACTS.md
+// 5 Initial Drone Waypoints conforming to CONTRACTS.md
 // Coordinates order in contracts is lat, lon. Cesium requires lon, lat!
-const STATIC_DRONES = [
+const INITIAL_DRONES = [
   {
     droneId: 'DR-01',
     name: 'Depot Command Drone',
@@ -68,21 +68,64 @@ const STATIC_DRONES = [
   },
 ]
 
+// Simulation flight path configuration for realistic orbital motion
+const SIMULATION_CONFIG = {
+  'DR-01': { centerLat: 17.4000, centerLon: 78.4000, radius: 0.005, speed: 0.06, baseAlt: 120, phase: 0 },
+  'DR-02': { centerLat: 17.4420, centerLon: 78.3800, radius: 0.007, speed: 0.05, baseAlt: 150, phase: 1.2 },
+  'DR-03': { centerLat: 17.3610, centerLon: 78.4750, radius: 0.006, speed: 0.07, baseAlt: 105, phase: 2.4 },
+  'DR-04': { centerLat: 17.4350, centerLon: 78.4980, radius: 0.008, speed: 0.04, baseAlt: 135, phase: 3.6 },
+  'DR-05': { centerLat: 17.4900, centerLon: 78.3950, radius: 0.006, speed: 0.05, baseAlt: 165, phase: 4.8 },
+}
+
 function App() {
   const containerRef = useRef(null)
   const viewerRef = useRef(null)
-  const [selectedDrone, setSelectedDrone] = useState(null)
+  const [drones, setDrones] = useState(INITIAL_DRONES)
+  const [selectedDroneId, setSelectedDroneId] = useState(null)
+  const [connectionMode, setConnectionMode] = useState('SIMULATED') // 'SIMULATED' | 'CONNECTED'
+  const simTickRef = useRef(0)
 
+  // Derive the currently selected drone from the latest live telemetry
+  const selectedDrone = drones.find((d) => d.droneId === selectedDroneId) || null
+
+  // 1. In-place update helper for existing Cesium entities (no duplicates created)
+  const updateCesiumEntities = (updatedDrones) => {
+    if (!viewerRef.current || viewerRef.current.isDestroyed()) return
+    const entities = viewerRef.current.entities
+
+    updatedDrones.forEach((drone) => {
+      const entity = entities.getById(drone.droneId)
+      if (!entity) return
+
+      const pos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt)
+      const groundPos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0)
+
+      // Update position in-place
+      entity.position = pos
+
+      // Update label in-place
+      if (entity.label) {
+        entity.label.text = `${drone.droneId}\n[${drone.step}] • ${Math.round(drone.alt)}m`
+      }
+
+      // Update 3D altitude drop-line in-place
+      if (entity.polyline) {
+        entity.polyline.positions = [groundPos, pos]
+      }
+    })
+  }
+
+  // 2. Initialize Cesium 3D Viewer once
   useEffect(() => {
     if (!containerRef.current) return
 
-    // 1. Configure Cesium Ion token if present in environment
+    // Configure Cesium Ion token if present
     const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN
     if (ionToken && ionToken.trim() !== '') {
       Cesium.Ion.defaultAccessToken = ionToken.trim()
     }
 
-    // 2. Fallback imagery provider: OpenStreetMap if no Ion token is set
+    // Fallback imagery: OpenStreetMap if no Ion token is set
     const baseLayer = ionToken && ionToken.trim() !== ''
       ? undefined
       : new Cesium.ImageryLayer(
@@ -91,7 +134,6 @@ function App() {
           })
         )
 
-    // 3. Initialize Cesium 3D Globe Viewer
     const viewer = new Cesium.Viewer(containerRef.current, {
       baseLayer: baseLayer,
       animation: false,
@@ -102,31 +144,21 @@ function App() {
       baseLayerPicker: false,
       navigationHelpButton: false,
       fullscreenButton: false,
-      infoBox: false, // We use custom React popup state for reliable, unblocked rendering
+      infoBox: false,
       selectionIndicator: true,
     })
 
     viewerRef.current = viewer
 
-    // 4. Add 5 static drone markers with clear styling and labels
-    STATIC_DRONES.forEach((drone) => {
-      // NOTE: Cesium expects lon first: fromDegrees(lon, lat, alt)
-      const position = Cesium.Cartesian3.fromDegrees(
-        drone.lon,
-        drone.lat,
-        drone.alt
-      )
-      const groundPosition = Cesium.Cartesian3.fromDegrees(
-        drone.lon,
-        drone.lat,
-        0
-      )
+    // Add initial drone entities (created once with unique ID)
+    INITIAL_DRONES.forEach((drone) => {
+      const position = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt)
+      const groundPosition = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0)
 
       viewer.entities.add({
         id: drone.droneId,
         name: `${drone.droneId} • ${drone.name}`,
         position: position,
-        // Altitude indicator line from ground to drone position
         polyline: {
           positions: [groundPosition, position],
           width: 2,
@@ -135,7 +167,6 @@ function App() {
             dashLength: 8,
           }),
         },
-        // Visible point marker
         point: {
           pixelSize: 16,
           color: Cesium.Color.fromCssColorString(drone.color),
@@ -143,7 +174,6 @@ function App() {
           outlineWidth: 2,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-        // Clean, readable text label with background pill
         label: {
           text: `${drone.droneId}\n[${drone.step}] • ${drone.alt}m`,
           font: 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -161,22 +191,21 @@ function App() {
       })
     })
 
-    // 5. Explicit Click Event Handler for picking drone markers directly on the globe
+    // Click event handler for selecting drones on the 3D globe
     const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
     clickHandler.setInputAction((movement) => {
       const pickedObject = viewer.scene.pick(movement.position)
       if (Cesium.defined(pickedObject) && pickedObject.id) {
-        const drone = STATIC_DRONES.find((d) => d.droneId === pickedObject.id.id)
-        if (drone) {
-          setSelectedDrone(drone)
+        const found = INITIAL_DRONES.find((d) => d.droneId === pickedObject.id.id)
+        if (found) {
+          setSelectedDroneId(found.droneId)
           return
         }
       }
-      // Clicked on empty space
-      setSelectedDrone(null)
+      setSelectedDroneId(null)
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
-    // 6. Initial Camera focus encompassing all 5 drone waypoints in Hyderabad
+    // Initial camera fly-to over Hyderabad operational hub
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(78.4350, 17.4150, 26000),
       orientation: {
@@ -187,7 +216,6 @@ function App() {
       duration: 1.8,
     })
 
-    // 7. Cleanup on unmount (essential for React 19 StrictMode)
     return () => {
       if (clickHandler && !clickHandler.isDestroyed()) {
         clickHandler.destroy()
@@ -199,7 +227,125 @@ function App() {
     }
   }, [])
 
-  // Basic navigation controls
+  // 3. Safe WebSocket integration attempt conforming to CONTRACTS.md (ws://localhost:8081/ws/telemetry)
+  useEffect(() => {
+    let ws = null
+    let isMounted = true
+    let reconnectTimer = null
+
+    const initWebSocket = () => {
+      try {
+        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8081/ws/telemetry'
+        ws = new WebSocket(wsUrl)
+
+        ws.onopen = () => {
+          if (!isMounted) return
+          setConnectionMode('CONNECTED')
+        }
+
+        ws.onmessage = (event) => {
+          if (!isMounted) return
+          try {
+            const data = JSON.parse(event.data)
+            if (data.type === 'telemetry' && Array.isArray(data.drones)) {
+              setDrones((prevDrones) => {
+                const updated = prevDrones.map((drone) => {
+                  const incoming = data.drones.find((d) => d.droneId === drone.droneId)
+                  if (!incoming) return drone
+                  return {
+                    ...drone,
+                    lat: incoming.lat ?? drone.lat,
+                    lon: incoming.lon ?? drone.lon,
+                    alt: incoming.alt ?? drone.alt,
+                    battery: incoming.battery ?? drone.battery,
+                    step: incoming.step ?? drone.step,
+                    status: incoming.status ?? drone.status,
+                  }
+                })
+                updateCesiumEntities(updated)
+                return updated
+              })
+            }
+          } catch {
+            // Ignore parse errors from non-standard test payloads
+          }
+        }
+
+        ws.onerror = () => {
+          if (!isMounted) return
+          setConnectionMode('SIMULATED')
+        }
+
+        ws.onclose = () => {
+          if (!isMounted) return
+          setConnectionMode('SIMULATED')
+          // Retry connecting in background every 6 seconds
+          reconnectTimer = setTimeout(initWebSocket, 6000)
+        }
+      } catch {
+        if (isMounted) {
+          setConnectionMode('SIMULATED')
+          reconnectTimer = setTimeout(initWebSocket, 6000)
+        }
+      }
+    }
+
+    initWebSocket()
+
+    return () => {
+      isMounted = false
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (ws) {
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onerror = null
+        ws.onclose = null
+        ws.close()
+      }
+    }
+  }, [])
+
+  // 4. Simulated Telemetry Engine (active when no backend is connected)
+  useEffect(() => {
+    if (connectionMode === 'CONNECTED') return
+
+    const intervalId = setInterval(() => {
+      simTickRef.current += 1
+      const tick = simTickRef.current
+
+      setDrones((prevDrones) => {
+        const updated = prevDrones.map((drone) => {
+          const config = SIMULATION_CONFIG[drone.droneId]
+          if (!config) return drone
+
+          // Smooth orbital calculation for natural flight paths
+          const angle = tick * config.speed + config.phase
+          const lat = config.centerLat + Math.sin(angle) * config.radius
+          const lon = config.centerLon + Math.cos(angle) * (config.radius * 1.15)
+          const alt = Number((config.baseAlt + Math.sin(angle * 2.2) * 8).toFixed(1))
+          const battery = Math.max(12, Number((drone.battery - 0.03).toFixed(1)))
+
+          return {
+            ...drone,
+            lat: Number(lat.toFixed(5)),
+            lon: Number(lon.toFixed(5)),
+            alt,
+            battery,
+          }
+        })
+
+        // In-place Cesium entity position/label update
+        updateCesiumEntities(updated)
+        return updated
+      })
+    }, 1000) // 1 Hz telemetry refresh rate as agreed in CONTRACTS.md
+
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [connectionMode])
+
+  // Camera navigation controls
   const handleZoomIn = () => {
     if (!viewerRef.current) return
     const camera = viewerRef.current.camera
@@ -228,7 +374,7 @@ function App() {
   }
 
   const handleFlyToDrone = (drone) => {
-    setSelectedDrone(drone)
+    setSelectedDroneId(drone.droneId)
     if (!viewerRef.current) return
     viewerRef.current.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 2500),
@@ -250,20 +396,37 @@ function App() {
       <div className="mission-hud">
         <div className="mission-hud-title">
           <span>AeroSageX Mission Control</span>
-          <span className="mission-hud-badge">Day 3</span>
+          <span className="mission-hud-badge">Day 4</span>
         </div>
         <div className="mission-hud-sub">
-          Static Drone Markers • Hyderabad Hub
+          Automated Telemetry & Live Drone Tracking
         </div>
 
+        {/* Visible Telemetry Source Indicator */}
+        <div className="telemetry-source-container">
+          {connectionMode === 'CONNECTED' ? (
+            <div className="telemetry-source-badge live" title="Active connection to ws://localhost:8081/ws/telemetry">
+              <span className="telemetry-dot live-pulse" />
+              <span>LIVE WEBSOCKET</span>
+            </div>
+          ) : (
+            <div className="telemetry-source-badge simulated" title="Backend offline: Using built-in realistic telemetry simulation">
+              <span className="telemetry-dot simulated-pulse" />
+              <span>SIMULATED TELEMETRY</span>
+            </div>
+          )}
+          <div className="telemetry-rate">1 Hz telemetry tick</div>
+        </div>
+
+        {/* Dynamic Drone Card List */}
         <div className="mission-drone-list">
-          {STATIC_DRONES.map((drone) => (
+          {drones.map((drone) => (
             <div
               key={drone.droneId}
-              className={`drone-card ${selectedDrone?.droneId === drone.droneId ? 'active' : ''}`}
+              className={`drone-card ${selectedDroneId === drone.droneId ? 'active' : ''}`}
               style={{ borderLeftColor: drone.color }}
               onClick={() => handleFlyToDrone(drone)}
-              title="Click to focus camera and view info"
+              title="Click to focus camera and view live telemetry"
             >
               <div className="drone-card-info">
                 <span className="drone-id">{drone.droneId}</span>
@@ -283,7 +446,7 @@ function App() {
         </div>
       </div>
 
-      {/* Dedicated Drone Information Popup */}
+      {/* Live Updating Drone Information Popup */}
       {selectedDrone && (
         <div className="drone-popup" onClick={(e) => e.stopPropagation()}>
           <div className="drone-popup-header">
@@ -296,7 +459,7 @@ function App() {
             </div>
             <button
               className="drone-popup-close"
-              onClick={() => setSelectedDrone(null)}
+              onClick={() => setSelectedDroneId(null)}
               title="Close Popup"
               aria-label="Close"
             >
@@ -304,7 +467,9 @@ function App() {
             </button>
           </div>
 
-          <div className="drone-popup-subtitle">{selectedDrone.name}</div>
+          <div className="drone-popup-subtitle">
+            {selectedDrone.name} • <span style={{ color: connectionMode === 'CONNECTED' ? '#3fb950' : '#d29922' }}>{connectionMode}</span>
+          </div>
 
           <div className="drone-popup-grid">
             <div className="drone-popup-row">
@@ -348,9 +513,9 @@ function App() {
               <span className="field-value">{selectedDrone.alt} m</span>
             </div>
             <div className="drone-popup-row">
-              <span className="field-label">Coordinates:</span>
+              <span className="field-label">Live Coordinates:</span>
               <code className="coords-code">
-                {selectedDrone.lat.toFixed(4)}° N, {selectedDrone.lon.toFixed(4)}° E
+                {selectedDrone.lat.toFixed(5)}° N, {selectedDrone.lon.toFixed(5)}° E
               </code>
             </div>
           </div>
