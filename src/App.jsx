@@ -18,6 +18,7 @@ const INITIAL_DRONES = [
     lon: 78.4000,
     alt: 120.0,
     battery: 92,
+    speed: 0,
     step: 'NAVIGATE',
     status: 'ACTIVE',
     color: '#00d2ff',
@@ -29,6 +30,7 @@ const INITIAL_DRONES = [
     lon: 78.3800,
     alt: 150.0,
     battery: 85,
+    speed: 0,
     step: 'TAKEOFF',
     status: 'ACTIVE',
     color: '#f59e0b',
@@ -40,6 +42,7 @@ const INITIAL_DRONES = [
     lon: 78.4750,
     alt: 105.0,
     battery: 64,
+    speed: 0,
     step: 'DROP',
     status: 'ACTIVE',
     color: '#10b981',
@@ -51,6 +54,7 @@ const INITIAL_DRONES = [
     lon: 78.4980,
     alt: 135.0,
     battery: 48,
+    speed: 0,
     step: 'RETURN',
     status: 'ACTIVE',
     color: '#a855f7',
@@ -62,6 +66,7 @@ const INITIAL_DRONES = [
     lon: 78.3950,
     alt: 165.0,
     battery: 76,
+    speed: 0,
     step: 'NAVIGATE',
     status: 'ACTIVE',
     color: '#38bdf8',
@@ -331,6 +336,7 @@ function App() {
             lon: Number(lon.toFixed(5)),
             alt,
             battery,
+            speed: Number((config.speed * 100).toFixed(1)),
           }
         })
 
@@ -445,6 +451,18 @@ function App() {
           ))}
         </div>
       </div>
+
+      {/* Telemetry Panel for selected drone */}
+      {selectedDrone && (
+        <div className="telemetry-panel">
+          <h3 className="panel-title">Telemetry – {selectedDrone.droneId}</h3>
+          <div className="panel-row"><span className="field-label">Latitude:</span> <span className="field-value">{selectedDrone.lat.toFixed(5)}° N</span></div>
+          <div className="panel-row"><span className="field-label">Longitude:</span> <span className="field-value">{selectedDrone.lon.toFixed(5)}° E</span></div>
+          <div className="panel-row"><span className="field-label">Altitude:</span> <span className="field-value">{selectedDrone.alt} m</span></div>
+          <div className="panel-row"><span className="field-label">Speed:</span> <span className="field-value">{selectedDrone.speed?.toFixed(1) ?? '—'} km/h</span></div>
+          <div className="panel-row"><span className="field-label">Battery:</span> <span className="field-value">{selectedDrone.battery}%</span></div>
+        </div>
+      )}
 
       {/* Live Updating Drone Information Popup */}
       {selectedDrone && (

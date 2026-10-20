@@ -164,7 +164,38 @@
   transform: scale(0.95);
 }
 
-/* Camera Help Bar at Bottom Center */
+/* Telemetry panel for selected drone */
+.telemetry-panel {
+  position: absolute;
+  top: 140px;
+  right: 16px;
+  z-index: 1000;
+  background: rgba(13, 17, 23, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #f0f6fc;
+  max-width: 260px;
+}
+.telemetry-panel .panel-title {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #58a6ff;
+}
+.telemetry-panel .panel-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.telemetry-panel .field-label {
+  color: #8b949e;
+}
+.telemetry-panel .field-value {
+  color: #c9d1d9;
+}
+
 .help-bar {
   position: absolute;
   bottom: 12px;
