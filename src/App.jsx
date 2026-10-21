@@ -73,7 +73,17 @@ const INITIAL_DRONES = [
   },
 ]
 
-// Simulation flight path configuration for realistic orbital motion
+// Status colour mapping for telemetry panel
+// Status colour mapping for telemetry panel
+const STATUS_COLORS = {
+  ACTIVE: '#3fb950', // green
+  INACTIVE: '#d29922', // orange
+  RETURN: '#f85149', // red
+  // fallback colour will be used if status not listed
+};
+
+
+
 const SIMULATION_CONFIG = {
   'DR-01': { centerLat: 17.4000, centerLon: 78.4000, radius: 0.005, speed: 0.06, baseAlt: 120, phase: 0 },
   'DR-02': { centerLat: 17.4420, centerLon: 78.3800, radius: 0.007, speed: 0.05, baseAlt: 150, phase: 1.2 },
@@ -87,11 +97,21 @@ function App() {
   const viewerRef = useRef(null)
   const [drones, setDrones] = useState(INITIAL_DRONES)
   const [selectedDroneId, setSelectedDroneId] = useState(null)
+  // search term for drone ID
+  const [searchTerm, setSearchTerm] = useState('')
+  // status filter (empty means all)
+  const [statusFilter, setStatusFilter] = useState('')
   const [connectionMode, setConnectionMode] = useState('SIMULATED') // 'SIMULATED' | 'CONNECTED'
   const simTickRef = useRef(0)
 
-  // Derive the currently selected drone from the latest live telemetry
-  const selectedDrone = drones.find((d) => d.droneId === selectedDroneId) || null
+  // Derive filtered list based on search term (case‑insensitive, trimmed) and status filter
+  const filteredDrones = drones.filter((d) => {
+    const term = searchTerm.trim().toLowerCase();
+    const matchesId = term === '' || d.droneId.toLowerCase().includes(term);
+    const matchesStatus = statusFilter === '' || d.status === statusFilter;
+    return matchesId && matchesStatus;
+  });
+  const selectedDrone = drones.find((d) => d.droneId === selectedDroneId) || null;
 
   // 1. In-place update helper for existing Cesium entities (no duplicates created)
   const updateCesiumEntities = (updatedDrones) => {
@@ -424,9 +444,30 @@ function App() {
           <div className="telemetry-rate">1 Hz telemetry tick</div>
         </div>
 
+        {/* Search and Filter Controls */}
+        <div className="search-filter">
+          <input
+            type="text"
+            placeholder="Search drones (e.g. DR-01)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="status-select"
+          >
+            <option value="">All Statuses</option>
+            {Array.from(new Set(drones.map((d) => d.status))).map((st) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Dynamic Drone Card List */}
         <div className="mission-drone-list">
-          {drones.map((drone) => (
+          {filteredDrones.map((drone) => (
             <div
               key={drone.droneId}
               className={`drone-card ${selectedDroneId === drone.droneId ? 'active' : ''}`}
@@ -492,7 +533,12 @@ function App() {
           <div className="drone-popup-grid">
             <div className="drone-popup-row">
               <span className="field-label">Mission Status:</span>
-              <span className="field-value status-badge">{selectedDrone.status}</span>
+              <span className="field-value status-badge" style={{
+              backgroundColor: STATUS_COLORS[selectedDrone.status] ?? 'rgba(255,255,255,0.1)',
+              color: '#f0f6fc',
+              padding: '2px 6px',
+              borderRadius: '4px',
+            }}>{selectedDrone.status}</span>
             </div>
             <div className="drone-popup-row">
               <span className="field-label">Current Step:</span>

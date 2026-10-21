@@ -220,7 +220,36 @@
 }
 
 
-/* Drone Information Popup */
+/* Search and Filter Controls */
+.search-filter {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.search-input,
+.status-select {
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(13, 17, 23, 0.8);
+  color: #f0f6fc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.search-input {
+  flex: 1;
+  min-width: 120px;
+}
+.status-select {
+  min-width: 120px;
+}
+@media (max-width: 600px) {
+  .search-filter {
+    flex-direction: column;
+  }
+}
+
+
 .drone-popup {
   position: absolute;
   top: 16px;
