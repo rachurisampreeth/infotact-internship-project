@@ -1,22 +1,25 @@
+
 package com.aerosaga.backend.controller;
 
+import com.aerosaga.backend.TemporalWorkerConfig;
+import com.aerosaga.backend.model.FleetRequest;
 import com.aerosaga.backend.model.MissionRequest;
-import com.aerosaga.backend.workflow.DroneMissionWorkflow;
+import com.aerosaga.backend.workflow.FleetMissionWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/fleets")
 @CrossOrigin(origins = "http://localhost:5173")
 public class FleetController {
-
-    private static final String TASK_QUEUE = "DRONE_MISSION_QUEUE";
 
     private final WorkflowClient workflowClient;
 
@@ -25,67 +28,79 @@ public class FleetController {
     }
 
     @PostMapping
-    public ResponseEntity<?> startFleetMissions(
-            @RequestBody List<MissionRequest> requests) {
+    public ResponseEntity<?> startFleet(@RequestBody FleetRequest request) {
 
-        if (requests == null || requests.isEmpty()) {
+        if (request == null
+                || request.getFleetId() == null
+                || request.getFleetId().isBlank()) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "At least one drone mission is required"));
+                    .body(Map.of("error", "fleetId is required"));
         }
 
-        for (MissionRequest request : requests) {
-            if (request.getDroneId() == null
-                    || request.getDroneId().isBlank()) {
+        List<MissionRequest> drones = request.getDrones();
+
+        if (drones == null || drones.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "At least one drone is required"));
+        }
+
+        Set<String> droneIds = new HashSet<>();
+
+        for (MissionRequest drone : drones) {
+            if (drone == null || drone.getDroneId() == null
+                    || drone.getDroneId().isBlank()) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Every mission must have a droneId"));
+                        .body(Map.of("error", "Every drone must have a droneId"));
+            }
+
+            if (!droneIds.add(drone.getDroneId())) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Duplicate droneId: "
+                                + drone.getDroneId()));
             }
         }
 
-        List<Map<String, String>> startedMissions = new ArrayList<>();
+        String workflowId = "fleet-" + request.getFleetId();
 
-        for (MissionRequest request : requests) {
-            String workflowId = "mission-" + request.getDroneId();
+        List<com.aerosaga.backend.workflow.MissionRequest> workflowRequests =
+                new ArrayList<>();
 
-            try {
-                WorkflowOptions options = WorkflowOptions.newBuilder()
-                        .setWorkflowId(workflowId)
-                        .setTaskQueue(TASK_QUEUE)
-                        .build();
-
-                DroneMissionWorkflow workflow =
-                        workflowClient.newWorkflowStub(
-                                DroneMissionWorkflow.class, options);
-
-                com.aerosaga.backend.workflow.MissionRequest workflowRequest =
-                        new com.aerosaga.backend.workflow.MissionRequest(
-                                request.getDroneId(),
-                                request.getDestLat(),
-                                request.getDestLon()
-                        );
-
-                WorkflowClient.start(workflow::runMission, workflowRequest);
-
-                startedMissions.add(Map.of(
-                        "workflowId", workflowId,
-                        "droneId", request.getDroneId(),
-                        "status", "STARTED"
-                ));
-
-            } catch (Exception e) {
-                return ResponseEntity.status(500).body(Map.of(
-                        "error", "Could not start mission for drone: "
-                                + request.getDroneId(),
-                        "details", e.getMessage() == null
-                                ? "Unknown error" : e.getMessage(),
-                        "startedMissions", startedMissions
-                ));
-            }
+        for (MissionRequest drone : drones) {
+            workflowRequests.add(
+                    new com.aerosaga.backend.workflow.MissionRequest(
+                            drone.getDroneId(),
+                            drone.getDestLat(),
+                            drone.getDestLon(),
+                            workflowId
+                    )
+            );
         }
 
-        return ResponseEntity.accepted().body(Map.of(
-                "status", "FLEET_STARTED",
-                "count", startedMissions.size(),
-                "missions", startedMissions
-        ));
+        try {
+            WorkflowOptions options = WorkflowOptions.newBuilder()
+                    .setWorkflowId(workflowId)
+                    .setTaskQueue(TemporalWorkerConfig.TASK_QUEUE)
+                    .build();
+
+            FleetMissionWorkflow workflow =
+                    workflowClient.newWorkflowStub(
+                            FleetMissionWorkflow.class, options);
+
+            WorkflowClient.start(workflow::runFleet, workflowRequests);
+
+            return ResponseEntity.accepted().body(Map.of(
+                    "status", "FLEET_STARTED",
+                    "fleetId", request.getFleetId(),
+                    "workflowId", workflowId,
+                    "count", workflowRequests.size()
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "error", "Could not start fleet workflow",
+                    "details", e.getMessage() == null
+                            ? "Unknown error" : e.getMessage()
+            ));
+        }
     }
 }
