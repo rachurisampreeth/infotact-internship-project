@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+
 import * as Cesium from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import './App.css'
@@ -10,6 +11,60 @@ if (typeof window !== 'undefined') {
 
 // 5 Initial Drone Waypoints conforming to CONTRACTS.md
 // Coordinates order in contracts is lat, lon. Cesium requires lon, lat!
+// Test mode flag – set to true to run performance test with 50 simulated drones
+const TEST_MODE = true;
+
+// Helper to generate a palette of distinct colors (basic set)
+const COLOR_PALETTE = [
+  '#00d2ff', '#f59e0b', '#10b981', '#a855f7', '#38bdf8',
+  '#ff6b6b', '#ffa500', '#8b0000', '#00ff7f', '#ff1493',
+];
+
+// Generate N test drones with unique IDs, random positions and random status/colour
+function generateTestDrones(count) {
+  const statuses = ['ACTIVE', 'INACTIVE', 'RETURN'];
+  const drones = [];
+  for (let i = 1; i <= count; i++) {
+    const idNum = String(i).padStart(2, '0');
+    const droneId = `DR-${idNum}`;
+    // Random lat/lon within a rectangle around Hyderabad
+    const lat = 17.30 + Math.random() * 0.30; // 17.30 - 17.60
+    const lon = 78.30 + Math.random() * 0.30; // 78.30 - 78.60
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const color = COLOR_PALETTE[i % COLOR_PALETTE.length];
+    drones.push({
+      droneId,
+      name: `Test Drone ${droneId}`,
+      lat,
+      lon,
+      alt: 120 + Math.random() * 100,
+      battery: 100,
+      speed: 0,
+      step: 'NAVIGATE',
+      status,
+      color,
+    });
+  }
+  return drones;
+}
+
+// Build a simulation config map for the provided drones
+function buildSimulationConfig(dronesArray) {
+  const config = {};
+  dronesArray.forEach((drone, idx) => {
+    config[drone.droneId] = {
+      centerLat: drone.lat,
+      centerLon: drone.lon,
+      radius: 0.005 + Math.random() * 0.003, // small orbit radius
+      speed: 0.04 + Math.random() * 0.03,
+      baseAlt: drone.alt,
+      phase: idx * 0.2,
+    };
+  });
+  return config;
+}
+
+// Determine the initial drone set based on test mode
 const INITIAL_DRONES = [
   {
     droneId: 'DR-01',
@@ -71,38 +126,53 @@ const INITIAL_DRONES = [
     status: 'ACTIVE',
     color: '#38bdf8',
   },
-]
+];
 
-// Status colour mapping for telemetry panel
+const initialDrones = TEST_MODE ? generateTestDrones(50) : INITIAL_DRONES;
+
 // Status colour mapping for telemetry panel
 const STATUS_COLORS = {
   ACTIVE: '#3fb950', // green
   INACTIVE: '#d29922', // orange
   RETURN: '#f85149', // red
-  // fallback colour will be used if status not listed
 };
 
-
-
-const SIMULATION_CONFIG = {
-  'DR-01': { centerLat: 17.4000, centerLon: 78.4000, radius: 0.005, speed: 0.06, baseAlt: 120, phase: 0 },
-  'DR-02': { centerLat: 17.4420, centerLon: 78.3800, radius: 0.007, speed: 0.05, baseAlt: 150, phase: 1.2 },
-  'DR-03': { centerLat: 17.3610, centerLon: 78.4750, radius: 0.006, speed: 0.07, baseAlt: 105, phase: 2.4 },
-  'DR-04': { centerLat: 17.4350, centerLon: 78.4980, radius: 0.008, speed: 0.04, baseAlt: 135, phase: 3.6 },
-  'DR-05': { centerLat: 17.4900, centerLon: 78.3950, radius: 0.006, speed: 0.05, baseAlt: 165, phase: 4.8 },
-}
-
 function App() {
+  // Simple error boundary to surface render errors in plain text for debugging
+  class ErrorBoundary extends React.Component {
+    constructor(props) {
+      super(props);
+      this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+      return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+      console.error('Render error caught:', error, errorInfo);
+    }
+    render() {
+      if (this.state.hasError) {
+        return (
+          <div className="render-error" style={{ color: 'red', padding: '1rem' }}>
+            {this.state.error && this.state.error.toString()}
+          </div>
+        );
+      }
+      return this.props.children;
+    }
+  }
+
   const containerRef = useRef(null)
   const viewerRef = useRef(null)
-  const [drones, setDrones] = useState(INITIAL_DRONES)
-  const [selectedDroneId, setSelectedDroneId] = useState(null)
-  // search term for drone ID
-  const [searchTerm, setSearchTerm] = useState('')
-  // status filter (empty means all)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [connectionMode, setConnectionMode] = useState('SIMULATED') // 'SIMULATED' | 'CONNECTED'
-  const simTickRef = useRef(0)
+  const [drones, setDrones] = useState(initialDrones);
+  const [selectedDroneId, setSelectedDroneId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [connectionMode, setConnectionMode] = useState('SIMULATED'); // 'SIMULATED' | 'CONNECTED'
+  const simTickRef = useRef(0);
+
+  // Memoised simulation config for current drones (created once per initial drone set)
+  const SIMULATION_CONFIG = useMemo(() => buildSimulationConfig(initialDrones), [initialDrones]);
 
   // Derive filtered list based on search term (case‑insensitive, trimmed) and status filter
   const filteredDrones = drones.filter((d) => {
@@ -115,50 +185,40 @@ function App() {
 
   // 1. In-place update helper for existing Cesium entities (no duplicates created)
   const updateCesiumEntities = (updatedDrones) => {
-    if (!viewerRef.current || viewerRef.current.isDestroyed()) return
-    const entities = viewerRef.current.entities
-
+    if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+    const entities = viewerRef.current.entities;
     updatedDrones.forEach((drone) => {
-      const entity = entities.getById(drone.droneId)
-      if (!entity) return
-
-      const pos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt)
-      const groundPos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0)
-
+      const entity = entities.getById(drone.droneId);
+      if (!entity) return;
+      const pos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt);
+      const groundPos = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0);
       // Update position in-place
-      entity.position = pos
-
+      entity.position = pos;
       // Update label in-place
       if (entity.label) {
-        entity.label.text = `${drone.droneId}\n[${drone.step}] • ${Math.round(drone.alt)}m`
+        entity.label.text = `${drone.droneId}\\n[${drone.step} • ${Math.round(drone.alt)}m]`;
       }
-
       // Update 3D altitude drop-line in-place
       if (entity.polyline) {
-        entity.polyline.positions = [groundPos, pos]
+        entity.polyline.positions = [groundPos, pos];
       }
-    })
-  }
+    });
+  };
 
   // 2. Initialize Cesium 3D Viewer once
   useEffect(() => {
-    if (!containerRef.current) return
-
-    // Configure Cesium Ion token if present
-    const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN
+    if (!containerRef.current) return;
+    const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
     if (ionToken && ionToken.trim() !== '') {
-      Cesium.Ion.defaultAccessToken = ionToken.trim()
+      Cesium.Ion.defaultAccessToken = ionToken.trim();
     }
-
-    // Fallback imagery: OpenStreetMap if no Ion token is set
     const baseLayer = ionToken && ionToken.trim() !== ''
       ? undefined
       : new Cesium.ImageryLayer(
           new Cesium.OpenStreetMapImageryProvider({
             url: 'https://tile.openstreetmap.org/',
           })
-        )
-
+        );
     const viewer = new Cesium.Viewer(containerRef.current, {
       baseLayer: baseLayer,
       animation: false,
@@ -171,15 +231,13 @@ function App() {
       fullscreenButton: false,
       infoBox: false,
       selectionIndicator: true,
-    })
-
-    viewerRef.current = viewer
+    });
+    viewerRef.current = viewer;
 
     // Add initial drone entities (created once with unique ID)
-    INITIAL_DRONES.forEach((drone) => {
-      const position = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt)
-      const groundPosition = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0)
-
+    initialDrones.forEach((drone) => {
+      const position = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, drone.alt);
+      const groundPosition = Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 0);
       viewer.entities.add({
         id: drone.droneId,
         name: `${drone.droneId} • ${drone.name}`,
@@ -200,7 +258,7 @@ function App() {
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
-          text: `${drone.droneId}\n[${drone.step}] • ${drone.alt}m`,
+          text: `${drone.droneId}\\n[${drone.step} • ${drone.alt}m]`,
           font: 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fillColor: Cesium.Color.WHITE,
           outlineColor: Cesium.Color.BLACK,
@@ -213,22 +271,22 @@ function App() {
           pixelOffset: new Cesium.Cartesian2(0, -20),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-      })
-    })
+      });
+    });
 
     // Click event handler for selecting drones on the 3D globe
-    const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+    const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     clickHandler.setInputAction((movement) => {
-      const pickedObject = viewer.scene.pick(movement.position)
+      const pickedObject = viewer.scene.pick(movement.position);
       if (Cesium.defined(pickedObject) && pickedObject.id) {
-        const found = INITIAL_DRONES.find((d) => d.droneId === pickedObject.id.id)
+        const found = drones.find((d) => d.droneId === pickedObject.id);
         if (found) {
-          setSelectedDroneId(found.droneId)
-          return
+          setSelectedDroneId(found.droneId);
+          return;
         }
       }
-      setSelectedDroneId(null)
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+      setSelectedDroneId(null);
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     // Initial camera fly-to over Hyderabad operational hub
     viewer.camera.flyTo({
@@ -239,44 +297,41 @@ function App() {
         roll: 0.0,
       },
       duration: 1.8,
-    })
+    });
 
     return () => {
       if (clickHandler && !clickHandler.isDestroyed()) {
-        clickHandler.destroy()
+        clickHandler.destroy();
       }
       if (viewer && !viewer.isDestroyed()) {
-        viewer.destroy()
+        viewer.destroy();
       }
-      viewerRef.current = null
-    }
-  }, [])
+      viewerRef.current = null;
+    };
+  }, []);
 
   // 3. Safe WebSocket integration attempt conforming to CONTRACTS.md (ws://localhost:8081/ws/telemetry)
   useEffect(() => {
-    let ws = null
-    let isMounted = true
-    let reconnectTimer = null
-
+    let ws = null;
+    let isMounted = true;
+    let reconnectTimer = null;
     const initWebSocket = () => {
       try {
-        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8081/ws/telemetry'
-        ws = new WebSocket(wsUrl)
-
+        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8081/ws/telemetry';
+        ws = new WebSocket(wsUrl);
         ws.onopen = () => {
-          if (!isMounted) return
-          setConnectionMode('CONNECTED')
-        }
-
+          if (!isMounted) return;
+          setConnectionMode('CONNECTED');
+        };
         ws.onmessage = (event) => {
-          if (!isMounted) return
+          if (!isMounted) return;
           try {
-            const data = JSON.parse(event.data)
+            const data = JSON.parse(event.data);
             if (data.type === 'telemetry' && Array.isArray(data.drones)) {
               setDrones((prevDrones) => {
                 const updated = prevDrones.map((drone) => {
-                  const incoming = data.drones.find((d) => d.droneId === drone.droneId)
-                  if (!incoming) return drone
+                  const incoming = data.drones.find((d) => d.droneId === drone.droneId);
+                  if (!incoming) return drone;
                   return {
                     ...drone,
                     lat: incoming.lat ?? drone.lat,
@@ -285,71 +340,59 @@ function App() {
                     battery: incoming.battery ?? drone.battery,
                     step: incoming.step ?? drone.step,
                     status: incoming.status ?? drone.status,
-                  }
-                })
-                updateCesiumEntities(updated)
-                return updated
-              })
+                  };
+                });
+                updateCesiumEntities(updated);
+                return updated;
+              });
             }
-          } catch {
-            // Ignore parse errors from non-standard test payloads
-          }
-        }
-
+          } catch { }
+        };
         ws.onerror = () => {
-          if (!isMounted) return
-          setConnectionMode('SIMULATED')
-        }
-
+          if (!isMounted) return;
+          setConnectionMode('SIMULATED');
+        };
         ws.onclose = () => {
-          if (!isMounted) return
-          setConnectionMode('SIMULATED')
-          // Retry connecting in background every 6 seconds
-          reconnectTimer = setTimeout(initWebSocket, 6000)
-        }
+          if (!isMounted) return;
+          setConnectionMode('SIMULATED');
+          reconnectTimer = setTimeout(initWebSocket, 6000);
+        };
       } catch {
         if (isMounted) {
-          setConnectionMode('SIMULATED')
-          reconnectTimer = setTimeout(initWebSocket, 6000)
+          setConnectionMode('SIMULATED');
+          reconnectTimer = setTimeout(initWebSocket, 6000);
         }
       }
-    }
-
-    initWebSocket()
-
+    };
+    initWebSocket();
     return () => {
-      isMounted = false
-      if (reconnectTimer) clearTimeout(reconnectTimer)
+      isMounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {
-        ws.onopen = null
-        ws.onmessage = null
-        ws.onerror = null
-        ws.onclose = null
-        ws.close()
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
       }
-    }
-  }, [])
+    };
+  }, []);
 
   // 4. Simulated Telemetry Engine (active when no backend is connected)
   useEffect(() => {
-    if (connectionMode === 'CONNECTED') return
-
+    if (connectionMode === 'CONNECTED') return;
     const intervalId = setInterval(() => {
-      simTickRef.current += 1
-      const tick = simTickRef.current
-
+      simTickRef.current += 1;
+      const tick = simTickRef.current;
       setDrones((prevDrones) => {
         const updated = prevDrones.map((drone) => {
-          const config = SIMULATION_CONFIG[drone.droneId]
-          if (!config) return drone
-
-          // Smooth orbital calculation for natural flight paths
-          const angle = tick * config.speed + config.phase
-          const lat = config.centerLat + Math.sin(angle) * config.radius
-          const lon = config.centerLon + Math.cos(angle) * (config.radius * 1.15)
-          const alt = Number((config.baseAlt + Math.sin(angle * 2.2) * 8).toFixed(1))
-          const battery = Math.max(12, Number((drone.battery - 0.03).toFixed(1)))
-
+          const config = SIMULATION_CONFIG[drone.droneId];
+          if (!config) return drone;
+          const angle = tick * config.speed + config.phase;
+          const lat = config.centerLat + Math.sin(angle) * config.radius;
+          const lon = config.centerLon + Math.cos(angle) * (config.radius * 1.15);
+          const alt = Number((config.baseAlt + Math.sin(angle * 2.2) * 8).toFixed(1));
+          const battery = Math.max(12, Number((drone.battery - 0.03).toFixed(1)));
           return {
             ...drone,
             lat: Number(lat.toFixed(5)),
@@ -357,37 +400,34 @@ function App() {
             alt,
             battery,
             speed: Number((config.speed * 100).toFixed(1)),
-          }
-        })
-
-        // In-place Cesium entity position/label update
-        updateCesiumEntities(updated)
-        return updated
-      })
-    }, 1000) // 1 Hz telemetry refresh rate as agreed in CONTRACTS.md
-
+          };
+        });
+        updateCesiumEntities(updated);
+        return updated;
+      });
+    }, 1000); // 1 Hz telemetry refresh rate as agreed in CONTRACTS.md
     return () => {
-      clearInterval(intervalId)
-    }
-  }, [connectionMode])
+      clearInterval(intervalId);
+    };
+  }, [connectionMode]);
 
   // Camera navigation controls
   const handleZoomIn = () => {
-    if (!viewerRef.current) return
-    const camera = viewerRef.current.camera
-    const height = camera.positionCartographic?.height || 10000
-    camera.zoomIn(height * 0.35)
-  }
+    if (!viewerRef.current) return;
+    const camera = viewerRef.current.camera;
+    const height = camera.positionCartographic?.height || 10000;
+    camera.zoomIn(height * 0.35);
+  };
 
   const handleZoomOut = () => {
-    if (!viewerRef.current) return
-    const camera = viewerRef.current.camera
-    const height = camera.positionCartographic?.height || 10000
-    camera.zoomOut(height * 0.35)
-  }
+    if (!viewerRef.current) return;
+    const camera = viewerRef.current.camera;
+    const height = camera.positionCartographic?.height || 10000;
+    camera.zoomOut(height * 0.35);
+  };
 
   const handleResetCamera = () => {
-    if (!viewerRef.current) return
+    if (!viewerRef.current) return;
     viewerRef.current.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(78.4350, 17.4150, 26000),
       orientation: {
@@ -396,12 +436,12 @@ function App() {
         roll: 0.0,
       },
       duration: 1.2,
-    })
-  }
+    });
+  };
 
   const handleFlyToDrone = (drone) => {
-    setSelectedDroneId(drone.droneId)
-    if (!viewerRef.current) return
+    setSelectedDroneId(drone.droneId);
+    if (!viewerRef.current) return;
     viewerRef.current.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(drone.lon, drone.lat, 2500),
       orientation: {
@@ -410,8 +450,8 @@ function App() {
         roll: 0.0,
       },
       duration: 1.2,
-    })
-  }
+    });
+  };
 
   return (
     <div className="app-container">
@@ -424,73 +464,71 @@ function App() {
           <span>AeroSageX Mission Control</span>
           <span className="mission-hud-badge">Day 4</span>
         </div>
-        <div className="mission-hud-sub">
-          Automated Telemetry & Live Drone Tracking
-        </div>
+        <div className="mission-hud-sub">Automated Telemetry &amp; Live Drone Tracking</div>
+      </div>
 
-        {/* Visible Telemetry Source Indicator */}
-        <div className="telemetry-source-container">
-          {connectionMode === 'CONNECTED' ? (
-            <div className="telemetry-source-badge live" title="Active connection to ws://localhost:8081/ws/telemetry">
-              <span className="telemetry-dot live-pulse" />
-              <span>LIVE WEBSOCKET</span>
-            </div>
-          ) : (
-            <div className="telemetry-source-badge simulated" title="Backend offline: Using built-in realistic telemetry simulation">
-              <span className="telemetry-dot simulated-pulse" />
-              <span>SIMULATED TELEMETRY</span>
-            </div>
-          )}
-          <div className="telemetry-rate">1 Hz telemetry tick</div>
-        </div>
+      {/* Visible Telemetry Source Indicator */}
+      <div className="telemetry-source-container">
+        {connectionMode === 'CONNECTED' ? (
+          <div className="telemetry-source-badge live" title="Active connection to ws://localhost:8081/ws/telemetry">
+            <span className="telemetry-dot live-pulse" />
+            <span>LIVE WEBSOCKET</span>
+          </div>
+        ) : (
+          <div className="telemetry-source-badge simulated" title="Backend offline: Using built-in realistic telemetry simulation">
+            <span className="telemetry-dot simulated-pulse" />
+            <span>SIMULATED TELEMETRY</span>
+          </div>
+        )}
+        <div className="telemetry-rate">1 Hz telemetry tick</div>
+      </div>
 
-        {/* Search and Filter Controls */}
-        <div className="search-filter">
-          <input
-            type="text"
-            placeholder="Search drones (e.g. DR-01)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="status-select"
-          >
-            <option value="">All Statuses</option>
-            {Array.from(new Set(drones.map((d) => d.status))).map((st) => (
-              <option key={st} value={st}>{st}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Dynamic Drone Card List */}
-        <div className="mission-drone-list">
-          {filteredDrones.map((drone) => (
-            <div
-              key={drone.droneId}
-              className={`drone-card ${selectedDroneId === drone.droneId ? 'active' : ''}`}
-              style={{ borderLeftColor: drone.color }}
-              onClick={() => handleFlyToDrone(drone)}
-              title="Click to focus camera and view live telemetry"
-            >
-              <div className="drone-card-info">
-                <span className="drone-id">{drone.droneId}</span>
-                <span className="drone-battery">{drone.battery}%</span>
-              </div>
-              <span
-                className="drone-step"
-                style={{
-                  color: drone.color,
-                  backgroundColor: `${drone.color}22`,
-                }}
-              >
-                {drone.step}
-              </span>
-            </div>
+      {/* Search and Filter Controls */}
+      <div className="search-filter">
+        <input
+          type="text"
+          placeholder="Search drones (e.g. DR-01)"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="status-select"
+        >
+          <option value="">All Statuses</option>
+          {Array.from(new Set(drones.map((d) => d.status))).map((st) => (
+            <option key={st} value={st}>{st}</option>
           ))}
-        </div>
+        </select>
+      </div>
+
+      {/* Dynamic Drone Card List */}
+      <div className="mission-drone-list">
+        {filteredDrones.map((drone) => (
+          <div
+            key={drone.droneId}
+            className={`drone-card ${selectedDroneId === drone.droneId ? 'active' : ''}`}
+            style={{ borderLeftColor: drone.color }}
+            onClick={() => handleFlyToDrone(drone)}
+            title="Click to focus camera and view live telemetry"
+          >
+            <div className="drone-card-info">
+              <span className="drone-id">{drone.droneId}</span>
+              <span className="drone-battery">{drone.battery}%</span>
+            </div>
+            <span
+              className="drone-step"
+              style={{
+                color: drone.color,
+                backgroundColor: `${drone.color}22`,
+              }}
+            >
+              {drone.step}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* Telemetry Panel for selected drone */}
@@ -510,10 +548,7 @@ function App() {
         <div className="drone-popup" onClick={(e) => e.stopPropagation()}>
           <div className="drone-popup-header">
             <div className="drone-popup-title-group">
-              <span
-                className="drone-status-dot"
-                style={{ backgroundColor: selectedDrone.color }}
-              />
+              <span className="drone-status-dot" style={{ backgroundColor: selectedDrone.color }} />
               <h3 className="drone-popup-title">{selectedDrone.droneId}</h3>
             </div>
             <button
@@ -525,49 +560,39 @@ function App() {
               ✕
             </button>
           </div>
-
           <div className="drone-popup-subtitle">
             {selectedDrone.name} • <span style={{ color: connectionMode === 'CONNECTED' ? '#3fb950' : '#d29922' }}>{connectionMode}</span>
           </div>
-
           <div className="drone-popup-grid">
             <div className="drone-popup-row">
               <span className="field-label">Mission Status:</span>
               <span className="field-value status-badge" style={{
-              backgroundColor: STATUS_COLORS[selectedDrone.status] ?? 'rgba(255,255,255,0.1)',
-              color: '#f0f6fc',
-              padding: '2px 6px',
-              borderRadius: '4px',
-            }}>{selectedDrone.status}</span>
+                backgroundColor: STATUS_COLORS[selectedDrone.status] || 'rgba(255,255,255,0.1)',
+                color: '#f0f6fc',
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}>{selectedDrone.status}</span>
             </div>
             <div className="drone-popup-row">
               <span className="field-label">Current Step:</span>
-              <span
-                className="field-value step-badge"
-                style={{
-                  color: selectedDrone.color,
-                  backgroundColor: `${selectedDrone.color}22`,
-                }}
-              >
-                {selectedDrone.step}
-              </span>
+              <span className="field-value step-badge" style={{
+                color: selectedDrone.color,
+                backgroundColor: `${selectedDrone.color}22`,
+              }}>{selectedDrone.step}</span>
             </div>
             <div className="drone-popup-row">
               <span className="field-label">Battery Level:</span>
               <div className="battery-container">
                 <div className="battery-bar-bg">
-                  <div
-                    className="battery-bar-fill"
-                    style={{
-                      width: `${selectedDrone.battery}%`,
-                      backgroundColor:
-                        selectedDrone.battery > 50
-                          ? '#3fb950'
-                          : selectedDrone.battery > 25
-                          ? '#d29922'
-                          : '#f85149',
-                    }}
-                  />
+                  <div className="battery-bar-fill" style={{
+                    width: `${selectedDrone.battery}%`,
+                    backgroundColor:
+                      selectedDrone.battery > 50
+                        ? '#3fb950'
+                        : selectedDrone.battery > 25
+                        ? '#d29922'
+                        : '#f85149',
+                  }} />
                 </div>
                 <span className="battery-text">{selectedDrone.battery}%</span>
               </div>
@@ -578,9 +603,7 @@ function App() {
             </div>
             <div className="drone-popup-row">
               <span className="field-label">Live Coordinates:</span>
-              <code className="coords-code">
-                {selectedDrone.lat.toFixed(5)}° N, {selectedDrone.lon.toFixed(5)}° E
-              </code>
+              <code className="coords-code">{selectedDrone.lat.toFixed(5)}° N, {selectedDrone.lon.toFixed(5)}° E</code>
             </div>
           </div>
         </div>
@@ -588,30 +611,9 @@ function App() {
 
       {/* Navigation & Zoom Control Buttons */}
       <div className="controls-panel">
-        <button
-          className="control-btn"
-          onClick={handleZoomIn}
-          title="Zoom In"
-          aria-label="Zoom In"
-        >
-          +
-        </button>
-        <button
-          className="control-btn"
-          onClick={handleZoomOut}
-          title="Zoom Out"
-          aria-label="Zoom Out"
-        >
-          −
-        </button>
-        <button
-          className="control-btn"
-          onClick={handleResetCamera}
-          title="Reset Camera to Mission Fleet"
-          aria-label="Reset Camera"
-        >
-          ⌂
-        </button>
+        <button className="control-btn" onClick={handleZoomIn} title="Zoom In" aria-label="Zoom In">+</button>
+        <button className="control-btn" onClick={handleZoomOut} title="Zoom Out" aria-label="Zoom Out">−</button>
+        <button className="control-btn" onClick={handleResetCamera} title="Reset Camera to Mission Fleet" aria-label="Reset Camera">⌂</button>
       </div>
 
       {/* Camera Gesture Guide */}
@@ -622,7 +624,7 @@ function App() {
         <div className="help-item"><span>Middle Drag:</span> Tilt Camera</div>
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
