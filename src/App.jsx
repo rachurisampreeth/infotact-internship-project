@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 
 import * as Cesium from 'cesium'
+import { useMissionState } from './hooks/useMissionState';
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import './App.css'
 
@@ -155,6 +156,7 @@ function App() {
         return (
           <div className="render-error" style={{ color: 'red', padding: '1rem' }}>
             {this.state.error && this.state.error.toString()}
+
           </div>
         );
       }
@@ -182,6 +184,7 @@ function App() {
     return matchesId && matchesStatus;
   });
   const selectedDrone = drones.find((d) => d.droneId === selectedDroneId) || null;
+  const { mission, loading: missionLoading, error: missionError } = useMissionState(selectedDrone?.droneId);
 
   // 1. In-place update helper for existing Cesium entities (no duplicates created)
   const updateCesiumEntities = (updatedDrones) => {
@@ -473,11 +476,13 @@ function App() {
           <div className="telemetry-source-badge live" title="Active connection to ws://localhost:8081/ws/telemetry">
             <span className="telemetry-dot live-pulse" />
             <span>LIVE WEBSOCKET</span>
+
           </div>
         ) : (
           <div className="telemetry-source-badge simulated" title="Backend offline: Using built-in realistic telemetry simulation">
             <span className="telemetry-dot simulated-pulse" />
             <span>SIMULATED TELEMETRY</span>
+
           </div>
         )}
         <div className="telemetry-rate">1 Hz telemetry tick</div>
@@ -527,6 +532,7 @@ function App() {
             >
               {drone.step}
             </span>
+
           </div>
         ))}
       </div>
@@ -550,7 +556,8 @@ function App() {
             <div className="drone-popup-title-group">
               <span className="drone-status-dot" style={{ backgroundColor: selectedDrone.color }} />
               <h3 className="drone-popup-title">{selectedDrone.droneId}</h3>
-            </div>
+
+          </div>
             <button
               className="drone-popup-close"
               onClick={() => setSelectedDroneId(null)}
@@ -559,9 +566,11 @@ function App() {
             >
               ✕
             </button>
+
           </div>
           <div className="drone-popup-subtitle">
             {selectedDrone.name} • <span style={{ color: connectionMode === 'CONNECTED' ? '#3fb950' : '#d29922' }}>{connectionMode}</span>
+
           </div>
           <div className="drone-popup-grid">
             <div className="drone-popup-row">
@@ -572,14 +581,16 @@ function App() {
                 padding: '2px 6px',
                 borderRadius: '4px',
               }}>{selectedDrone.status}</span>
-            </div>
+
+          </div>
             <div className="drone-popup-row">
               <span className="field-label">Current Step:</span>
               <span className="field-value step-badge" style={{
                 color: selectedDrone.color,
                 backgroundColor: `${selectedDrone.color}22`,
               }}>{selectedDrone.step}</span>
-            </div>
+
+          </div>
             <div className="drone-popup-row">
               <span className="field-label">Battery Level:</span>
               <div className="battery-container">
@@ -593,18 +604,24 @@ function App() {
                         ? '#d29922'
                         : '#f85149',
                   }} />
-                </div>
+
+          </div>
                 <span className="battery-text">{selectedDrone.battery}%</span>
-              </div>
-            </div>
+
+          </div>
+
+          </div>
             <div className="drone-popup-row">
               <span className="field-label">Flight Altitude:</span>
               <span className="field-value">{selectedDrone.alt} m</span>
-            </div>
+
+          </div>
             <div className="drone-popup-row">
               <span className="field-label">Live Coordinates:</span>
               <code className="coords-code">{selectedDrone.lat.toFixed(5)}° N, {selectedDrone.lon.toFixed(5)}° E</code>
-            </div>
+
+          </div>
+
           </div>
         </div>
       )}
