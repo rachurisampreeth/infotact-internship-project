@@ -1,18 +1,8 @@
-# infotact-internship-project
+# Infotact Internship Project - AeroSageX Backend
 
 Collaborative project development for the Infotact Solutions internship.
 
-## Day 7: Temporal Persistence Test
-
-- Started a test workflow: `persistence-test-001`.
-- Restarted the separate `temporal-persistent-test` container.
-- Verified that the workflow remained visible with `Running` status after restart.
-- Result: Workflow persistence across this test container restart was verified.
-- Test Temporal ports: `7234` (gRPC) and `8234` (Web UI).
-
-## Day 9: Backend API Documentation
-
-### Backend Configuration
+## Backend Overview
 
 - Framework: Spring Boot
 - Backend URL: `http://localhost:8081`
@@ -20,17 +10,31 @@ Collaborative project development for the Infotact Solutions internship.
 - Temporal namespace: `default`
 - Task queue: `DRONE_MISSION_QUEUE`
 
+## Day-wise Progress
+
+- **Day 1:** Spring Boot backend setup.
+- **Day 2:** Temporal workflow integration and mission-start API.
+- **Day 3:** Drone telemetry REST API.
+- **Day 4:** Telemetry WebSocket endpoint.
+- **Day 5:** Fleet mission API and multi-drone workflow execution.
+- **Day 6:** Mission state API.
+- **Day 7:** Temporal workflow persistence test using a separate test container.
+- **Day 8:** Frontend integration testing.
+- **Day 9:** Backend API documentation.
+- **Day 10:** Final build and regression testing.
+
+## API Documentation
+
 ### 1. Health Check
 
-- Method: `GET`
-- Endpoint: `/api/health`
-- Purpose: Checks whether the backend is running.
+- **Method:** `GET`
+- **Endpoint:** `/api/health`
+- **Purpose:** Checks whether the backend is running.
 
 ### 2. Start a Mission
 
-- Method: `POST`
-- Endpoint: `/api/missions`
-- Purpose: Starts a drone mission using a Temporal workflow.
+- **Method:** `POST`
+- **Endpoint:** `/api/missions`
 
 Request body:
 
@@ -42,7 +46,7 @@ Request body:
 }
 ```
 
-Successful response:
+Successful response example:
 
 ```json
 {
@@ -51,26 +55,24 @@ Successful response:
 }
 ```
 
-Validation rules:
+Validation:
 - `droneId` is required.
 - `destLat` must be between -90 and 90.
 - `destLon` must be between -180 and 180.
 
 ### 3. Get Mission State
 
-- Method: `GET`
-- Endpoint: `/api/missions/{droneId}/state`
-- Purpose: Retrieves the current mission state.
+- **Method:** `GET`
+- **Endpoint:** `/api/missions/{droneId}/state`
 
 Example: `GET /api/missions/drone-001/state`
 
 ### 4. Submit Drone Telemetry
 
-- Method: `POST`
-- Endpoint: `/api/telemetry`
-- Purpose: Receives telemetry data from a drone.
+- **Method:** `POST`
+- **Endpoint:** `/api/telemetry`
 
-Example request:
+Request body:
 
 ```json
 {
@@ -81,14 +83,22 @@ Example request:
   "battery": 85,
   "step": "NAVIGATE",
   "status": "ACTIVE",
-  "timestamp": 1760000000000
+  "timestamp": 1792705000000
 }
 ```
 
+Validation:
+- Latitude must be between -90 and 90.
+- Longitude must be between -180 and 180.
+- Altitude must be non-negative.
+- Battery must be between 0 and 100.
+- `step` and `status` must use supported values.
+- `timestamp` must be a positive epoch-milliseconds value.
+
 ### 5. Telemetry WebSocket
 
-- URL: `ws://localhost:8081/ws/telemetry`
-- Purpose: Streams telemetry updates to connected clients.
+- **URL:** `ws://localhost:8081/ws/telemetry`
+- **Purpose:** Streams telemetry updates to connected clients.
 
 Example message:
 
@@ -101,11 +111,11 @@ Example message:
 
 ### 6. Start a Fleet Mission
 
-- Method: `POST`
-- Endpoint: `/api/fleets`
-- Purpose: Starts missions for multiple drones.
+- **Method:** `POST`
+- **Endpoint:** `/api/fleets`
+- **Purpose:** Starts missions for multiple drones.
 
-Example request:
+Request body:
 
 ```json
 {
@@ -120,12 +130,27 @@ Example request:
 }
 ```
 
-### Frontend Integration
+## Frontend Integration
 
 - Frontend URL: `http://localhost:5173`
 - Allowed frontend origin: `http://localhost:5173`
 
-### Error Handling
+## Testing Summary
+
+- Maven clean package build completed successfully.
+- Backend health endpoint returned `UP`.
+- Mission state endpoint returned a completed mission state.
+- Telemetry API accepted a valid request.
+- Fleet workflow and both child drone workflows reached `Completed`.
+- Frontend dashboard was tested in a separate local worktree.
+
+## Day 7 Persistence Test
+
+A separate `temporal-persistent-test` container was used to test workflow visibility after restarting that test container. Its ports were `7234` (gRPC) and `8234` (Web UI).
+
+The main backend Temporal server uses port `7233`. These are separate test setups.
+
+## Error Handling
 
 Invalid requests return an HTTP error response containing an error message.
 
