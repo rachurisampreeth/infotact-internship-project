@@ -30,10 +30,24 @@ public class MissionController {
     public ResponseEntity<Map<String, String>> startMission(
             @RequestBody MissionRequest request) {
 
-        if (request.getDroneId() == null
+        if (request == null || request.getDroneId() == null
                 || request.getDroneId().isBlank()) {
             return ResponseEntity.badRequest().body(
                     Map.of("error", "droneId is required"));
+        }
+
+        if (!Double.isFinite(request.getDestLat())
+                || request.getDestLat() < -90
+                || request.getDestLat() > 90) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "destLat must be between -90 and 90"));
+        }
+
+        if (!Double.isFinite(request.getDestLon())
+                || request.getDestLon() < -180
+                || request.getDestLon() > 180) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "destLon must be between -180 and 180"));
         }
 
         String workflowId = "mission-" + request.getDroneId();
