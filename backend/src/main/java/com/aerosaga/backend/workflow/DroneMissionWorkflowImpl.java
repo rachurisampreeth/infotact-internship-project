@@ -13,7 +13,10 @@ public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
                     .setStartToCloseTimeout(Duration.ofSeconds(30))
                     .setRetryOptions(
                             io.temporal.common.RetryOptions.newBuilder()
-                                    .setMaximumAttempts(1)
+                                    .setInitialInterval(Duration.ofSeconds(2))
+                                    .setBackoffCoefficient(2.0)
+                                    .setMaximumInterval(Duration.ofSeconds(10))
+                                    .setMaximumAttempts(3)
                                     .build()
                     )
                     .build()
@@ -23,14 +26,20 @@ public class DroneMissionWorkflowImpl implements DroneMissionWorkflow {
             Workflow.newActivityStub(
                     DroneActivities.class,
                     ActivityOptions.newBuilder()
-                            .setStartToCloseTimeout(Duration.ofMinutes(10))
+                            .setStartToCloseTimeout(Duration.ofMinutes(12))
                             .setHeartbeatTimeout(Duration.ofSeconds(15))
-                            .setRetryOptions(
-                                    io.temporal.common.RetryOptions.newBuilder()
-                                            .setMaximumAttempts(1)
-                                            .build()
-                            )
-                            .build()
+
+                                    .setRetryOptions(
+                                            io.temporal.common.RetryOptions.newBuilder()
+                                                    .setInitialInterval(Duration.ofSeconds(2))
+                                                    .setBackoffCoefficient(2.0)
+                                                    .setMaximumInterval(Duration.ofSeconds(10))
+                                                    .setMaximumAttempts(3)
+                                                    .build()
+                                    )
+
+
+                    .build()
             );
 
     private String droneId;
