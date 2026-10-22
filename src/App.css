@@ -299,3 +299,67 @@
   font-weight: 600;
   color: #f0f6fc;
 }
+
+/* Added UI polish for Day 9 */
+.drone-card.active {
+  background: rgba(56, 139, 253, 0.2);
+  transform: translateX(2px);
+}
+
+/* Focus outline for accessibility */
+.drone-card:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
+/* Raise popup stacking order */
+.drone-popup {
+  z-index: 300;
+}
+
+/* Spinner for loading states */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error text style */
+.error-text {
+  color: #f85149; /* red */
+  font-weight: 600;
+}
+
+/* Responsive layout */
+@media (max-width: 600px) {
+  .mission-hud, .search-filter, .mission-drone-list, .telemetry-panel, .controls-panel {
+    position: static;
+    max-width: none;
+    width: 100%;
+    margin: 4px 0;
+  }
+  .mission-drone-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+  .telemetry-panel {
+    margin-top: 8px;
+  }
+  .controls-panel {
+    flex-direction: row;
+    justify-content: center;
+    bottom: auto;
+    top: auto;
+    margin-top: 8px;
+  }
+}
