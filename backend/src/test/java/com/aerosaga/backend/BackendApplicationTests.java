@@ -1,13 +1,17 @@
 package com.aerosaga.backend;
 
+import io.temporal.client.WorkflowClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest
+@SpringBootTest(properties = "temporal.worker.enabled=false")
 class BackendApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
+    @MockitoBean
+    private WorkflowClient workflowClient;
 
+    @Test
+    void contextLoads() {
+    }
 }

@@ -1,4 +1,4 @@
-# infotact-internship-project
+    # infotact-internship-project
 
 Collaborative project development for the Infotact Solutions internship
 
@@ -207,3 +207,11 @@ Each telemetry record includes `droneId`, `lat`, `lon`, `alt`, `battery`, `step`
 - Temporal currently uses in-memory persistence.
 
 - Full 50-drone integration and restart-resilience testing remain to be completed.
+## Day 7: Temporal Persistence Test
+
+- Started a test workflow: `persistence-test-001`.
+- Restarted the separate `temporal-persistent-test` container.
+- Verified that the workflow remained visible with `Running` status after restart.
+- Result: Workflow persistence across this test container restart was verified.
+- Test Temporal ports: `7234` (gRPC) and `8234` (Web UI).
+
