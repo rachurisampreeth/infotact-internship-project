@@ -5,6 +5,7 @@ import com.aerosaga.backend.config.TemporalConfig;
 import com.aerosaga.backend.workflow.DroneActivitiesImpl;
 import com.aerosaga.backend.workflow.DroneMissionWorkflowImpl;
 import com.aerosaga.backend.workflow.FleetMissionWorkflowImpl;
+import com.aerosaga.backend.workflow.ResiliencyTestWorkflowImpl;
 
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
@@ -61,7 +62,8 @@ public class TemporalWorkerConfig {
 
         worker.registerWorkflowImplementationTypes(
                 DroneMissionWorkflowImpl.class,
-                FleetMissionWorkflowImpl.class
+                FleetMissionWorkflowImpl.class,
+                ResiliencyTestWorkflowImpl.class
         );
 
         worker.registerActivitiesImplementations(
@@ -72,4 +74,3 @@ public class TemporalWorkerConfig {
         return factory;
     }
 }
-
